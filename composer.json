@@ -1,0 +1,34 @@
+{
+    "name": "hanhan/think-queue-rabbitmq",
+    "description": "RabbitMQ driver for ThinkPHP8 Queue.",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "zhanghanhan",
+            "email": "15175809883@163.com"
+        }
+    ],
+    "require": {
+        "php": "^8.0",
+        "php-amqplib/php-amqplib": "^3.0",
+        "topthink/think-queue": "^3.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.3"
+    },
+    "autoload": {
+        "psr-4": {
+            "hanhan\\ThinkQueueRabbitMQ\\": "src/"
+        }
+    },
+    "extra": {
+        "think": {
+            "services": [
+                "hanhan\\ThinkQueueRabbitMQ\\queue\\Service"
+            ]
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
