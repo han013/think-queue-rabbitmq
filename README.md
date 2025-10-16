@@ -269,7 +269,7 @@ queueBatch(\app\job\SendSms::class, [
 
 `$options` 选项参数，可不填
 
-`$useTransaction` 是否使用事务模式，默认 false（使用 publisher confirms，性能更好）
+`$useTransaction` 是否使用事务模式，默认 false（直接批量推送）
 
 **使用示例：**
 ```php
@@ -282,17 +282,20 @@ $jobs = [
     ['job' => \app\job\SendEmail::class, 'data' => ['email' => 'user3@example.com']],
 ];
 
-// 批量推送（使用 publisher confirms，推荐）
+// 批量推送（默认模式，推荐）
 $correlationIds = Queue::connection('rabbitmq')->pushBatch($jobs, 'email_queue');
 
-// 或使用事务模式（保证原子性）
+// 或使用事务模式（需要原子性保证时）
 $correlationIds = Queue::connection('rabbitmq')->pushBatch($jobs, 'email_queue', [], true);
 
 // 延迟批量推送
 $correlationIds = Queue::connection('rabbitmq')->laterBatch(60, $jobs, 'email_queue');
 ```
 
-**更多批量推送示例，请查看：[BATCH_PUSH_EXAMPLE.md](BATCH_PUSH_EXAMPLE.md)**
+**批量推送说明：**
+- 默认模式：直接批量推送，简单可靠，性能优秀
+- 事务模式：提供原子性保证，所有任务要么全部成功，要么全部失败
+- 推荐使用默认模式，除非业务明确需要事务保证
 
 
 ### 消费消息

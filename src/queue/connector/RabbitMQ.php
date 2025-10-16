@@ -177,7 +177,7 @@ class RabbitMQ extends Connector
      * @param array $jobs 任务数组，每个元素可以是 ['job' => $job, 'data' => $data] 或者 ['payload' => $payload]
      * @param string|null $queue 队列名称
      * @param array $options 选项参数
-     * @param bool $useTransaction 是否使用事务（默认 false，使用 publisher confirms）
+     * @param bool $useTransaction 是否使用事务（默认 false，直接批量推送）
      * @return array 返回所有消息的 correlationId 数组
      * @throws AMQPProtocolChannelException
      */
@@ -209,18 +209,13 @@ class RabbitMQ extends Connector
                 throw $e;
             }
         } else {
-            // 使用 publisher confirms 模式（性能更好）
-            $this->channel->confirm_select();
-
+            // 直接批量推送（最简单可靠的方式）
             foreach ($jobs as $job) {
                 $payload = $this->prepareJobPayload($job);
                 [$message, $correlationId] = $this->createMessage($payload, $attempts);
                 $this->channel->basic_publish($message, $exchange, $destination, true, false);
                 $correlationIds[] = $correlationId;
             }
-
-            // 等待所有消息确认
-            $this->channel->wait_for_pending_acks();
         }
 
         return $correlationIds;
@@ -263,16 +258,12 @@ class RabbitMQ extends Connector
                 throw $e;
             }
         } else {
-            // 使用 publisher confirms 模式
-            $this->channel->confirm_select();
-
+            // 直接批量推送
             foreach ($payloads as $payload) {
                 [$message, $correlationId] = $this->createMessage($payload, $attempts);
                 $this->channel->basic_publish($message, $exchange, $destination, true, false);
                 $correlationIds[] = $correlationId;
             }
-
-            $this->channel->wait_for_pending_acks();
         }
 
         return $correlationIds;
