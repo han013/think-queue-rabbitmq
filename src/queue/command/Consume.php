@@ -12,7 +12,6 @@ use think\queue\command\Work;
 
 class Consume extends Work
 {
-
     public function __construct(Consumer $worker)
     {
         parent::__construct($worker);

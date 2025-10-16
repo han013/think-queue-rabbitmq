@@ -212,6 +212,8 @@ class Job2{
 
 
 ## 发布任务
+
+### 单个任务推送
 > `think\facade\Queue::push($job, $data = '', $queue = null)` 和 `think\facade\Queue::later($delay, $job, $data = '', $queue = null)` 两个方法，前者是立即执行，后者是在`$delay`秒后执行
 
 `$job` 是任务名  
@@ -223,6 +225,74 @@ class Job2{
 `$data` 是你要传到任务里的参数
 
 `$queue` 队列名，指定这个任务是在哪个队列上执行，同下面监控队列的时候指定的队列名,可不填
+
+### 批量任务推送（新功能）
+
+#### 方式1：使用 queueBatch() 辅助函数（推荐）
+> `queueBatch($job, array $list = [], int $delay = 0, ?string $queue = null)` 批量推送多个相同任务到队列
+
+这是最简单的批量推送方式，类似于 `queue()` 辅助函数的使用体验。
+
+`$job` 是任务类名或对象
+
+`$list` 是数据列表数组，每个元素将作为一个独立任务的 data
+
+`$delay` 是延迟时间（秒），默认 0 立即执行
+
+`$queue` 是队列名，可不填
+
+**使用示例：**
+```php
+// 立即批量推送
+queueBatch(\app\job\SendEmail::class, [
+    ['email' => 'user1@example.com', 'name' => 'User1'],
+    ['email' => 'user2@example.com', 'name' => 'User2'],
+    ['email' => 'user3@example.com', 'name' => 'User3'],
+]);
+
+// 延迟 60 秒后批量推送到指定队列
+queueBatch(\app\job\SendSms::class, [
+    ['phone' => '13800138000'],
+    ['phone' => '13800138001'],
+], 60, 'sms_queue');
+```
+
+#### 方式2：使用底层方法（更多控制）
+> `think\facade\Queue::connection('rabbitmq')->pushBatch($jobs, $queue = null, $options = [], $useTransaction = false)` 批量推送多个任务到队列
+
+`$jobs` 是任务数组，支持以下格式：
+- `['job' => 任务类, 'data' => 数据]` 格式（推荐）
+- 直接传入任务类名字符串
+- `['payload' => payload字符串]` 格式
+
+`$queue` 队列名，可不填
+
+`$options` 选项参数，可不填
+
+`$useTransaction` 是否使用事务模式，默认 false（使用 publisher confirms，性能更好）
+
+**使用示例：**
+```php
+use think\facade\Queue;
+
+// 准备要推送的任务
+$jobs = [
+    ['job' => \app\job\SendEmail::class, 'data' => ['email' => 'user1@example.com']],
+    ['job' => \app\job\SendEmail::class, 'data' => ['email' => 'user2@example.com']],
+    ['job' => \app\job\SendEmail::class, 'data' => ['email' => 'user3@example.com']],
+];
+
+// 批量推送（使用 publisher confirms，推荐）
+$correlationIds = Queue::connection('rabbitmq')->pushBatch($jobs, 'email_queue');
+
+// 或使用事务模式（保证原子性）
+$correlationIds = Queue::connection('rabbitmq')->pushBatch($jobs, 'email_queue', [], true);
+
+// 延迟批量推送
+$correlationIds = Queue::connection('rabbitmq')->laterBatch(60, $jobs, 'email_queue');
+```
+
+**更多批量推送示例，请查看：[BATCH_PUSH_EXAMPLE.md](BATCH_PUSH_EXAMPLE.md)**
 
 
 ### 消费消息

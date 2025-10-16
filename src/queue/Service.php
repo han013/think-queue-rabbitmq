@@ -18,7 +18,8 @@ class Service extends \think\Service
 
         $queueConfig = $this->app->config->get('queue', []);
         $queueConfig['connections'] = array_merge(
-            $config, $queueConfig['connections'] ?? []
+            $config,
+            $queueConfig['connections'] ?? []
         );
 
         $this->app->config->set($queueConfig, 'queue');

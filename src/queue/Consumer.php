@@ -14,7 +14,6 @@ use Throwable;
 
 class Consumer extends Worker
 {
-
     /** @var App */
     protected $app;
 

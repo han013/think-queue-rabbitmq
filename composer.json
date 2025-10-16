@@ -20,7 +20,10 @@
     "autoload": {
         "psr-4": {
             "hanhan\\ThinkQueueRabbitMQ\\": "src/"
-        }
+        },
+        "files": [
+            "src/helper.php"
+        ]
     },
     "extra": {
         "think": {

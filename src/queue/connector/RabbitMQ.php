@@ -20,7 +20,6 @@ use Throwable;
 
 class RabbitMQ extends Connector
 {
-
     use InteractsWithTime;
 
     /**
@@ -170,6 +169,172 @@ class RabbitMQ extends Connector
         $this->channel->basic_publish($message, $exchange, $destination, true, false);
 
         return $correlationId;
+    }
+
+    /**
+     * 批量推送任务到队列
+     *
+     * @param array $jobs 任务数组，每个元素可以是 ['job' => $job, 'data' => $data] 或者 ['payload' => $payload]
+     * @param string|null $queue 队列名称
+     * @param array $options 选项参数
+     * @param bool $useTransaction 是否使用事务（默认 false，使用 publisher confirms）
+     * @return array 返回所有消息的 correlationId 数组
+     * @throws AMQPProtocolChannelException
+     */
+    public function pushBatch(array $jobs, $queue = null, array $options = [], bool $useTransaction = false): array
+    {
+        if (empty($jobs)) {
+            return [];
+        }
+
+        [$destination, $exchange, $exchangeType, $attempts] = $this->publishProperties($queue, $options);
+
+        $this->declareDestination($destination, $exchange, $exchangeType);
+
+        $correlationIds = [];
+
+        // 使用事务模式
+        if ($useTransaction) {
+            $this->channel->tx_select();
+            try {
+                foreach ($jobs as $job) {
+                    $payload = $this->prepareJobPayload($job);
+                    [$message, $correlationId] = $this->createMessage($payload, $attempts);
+                    $this->channel->basic_publish($message, $exchange, $destination, true, false);
+                    $correlationIds[] = $correlationId;
+                }
+                $this->channel->tx_commit();
+            } catch (\Exception $e) {
+                $this->channel->tx_rollback();
+                throw $e;
+            }
+        } else {
+            // 使用 publisher confirms 模式（性能更好）
+            $this->channel->confirm_select();
+
+            foreach ($jobs as $job) {
+                $payload = $this->prepareJobPayload($job);
+                [$message, $correlationId] = $this->createMessage($payload, $attempts);
+                $this->channel->basic_publish($message, $exchange, $destination, true, false);
+                $correlationIds[] = $correlationId;
+            }
+
+            // 等待所有消息确认
+            $this->channel->wait_for_pending_acks();
+        }
+
+        return $correlationIds;
+    }
+
+    /**
+     * 批量推送原始 payload 到队列
+     *
+     * @param array $payloads payload 数组
+     * @param string|null $queue 队列名称
+     * @param array $options 选项参数
+     * @param bool $useTransaction 是否使用事务
+     * @return array 返回所有消息的 correlationId 数组
+     * @throws AMQPProtocolChannelException
+     */
+    public function pushRawBatch(array $payloads, $queue = null, array $options = [], bool $useTransaction = false): array
+    {
+        if (empty($payloads)) {
+            return [];
+        }
+
+        [$destination, $exchange, $exchangeType, $attempts] = $this->publishProperties($queue, $options);
+
+        $this->declareDestination($destination, $exchange, $exchangeType);
+
+        $correlationIds = [];
+
+        // 使用事务模式
+        if ($useTransaction) {
+            $this->channel->tx_select();
+            try {
+                foreach ($payloads as $payload) {
+                    [$message, $correlationId] = $this->createMessage($payload, $attempts);
+                    $this->channel->basic_publish($message, $exchange, $destination, true, false);
+                    $correlationIds[] = $correlationId;
+                }
+                $this->channel->tx_commit();
+            } catch (\Exception $e) {
+                $this->channel->tx_rollback();
+                throw $e;
+            }
+        } else {
+            // 使用 publisher confirms 模式
+            $this->channel->confirm_select();
+
+            foreach ($payloads as $payload) {
+                [$message, $correlationId] = $this->createMessage($payload, $attempts);
+                $this->channel->basic_publish($message, $exchange, $destination, true, false);
+                $correlationIds[] = $correlationId;
+            }
+
+            $this->channel->wait_for_pending_acks();
+        }
+
+        return $correlationIds;
+    }
+
+    /**
+     * 批量延迟推送任务到队列
+     *
+     * @param int $delay 延迟时间（秒）
+     * @param array $jobs 任务数组
+     * @param string|null $queue 队列名称
+     * @param array $options 选项参数
+     * @return array 返回所有消息的 correlationId 数组
+     * @throws AMQPProtocolChannelException
+     */
+    public function laterBatch(int $delay, array $jobs, $queue = null, array $options = []): array
+    {
+        if (empty($jobs)) {
+            return [];
+        }
+
+        $correlationIds = [];
+
+        foreach ($jobs as $job) {
+            $payload = $this->prepareJobPayload($job);
+            $correlationId = $this->laterRaw($delay, $payload, $queue);
+            $correlationIds[] = $correlationId;
+        }
+
+        return $correlationIds;
+    }
+
+    /**
+     * 准备任务 payload
+     *
+     * @param mixed $job
+     * @return string
+     */
+    protected function prepareJobPayload($job): string
+    {
+        // 如果已经是 payload 字符串
+        if (is_string($job)) {
+            return $job;
+        }
+
+        // 如果是数组格式
+        if (is_array($job)) {
+            // 如果直接提供了 payload
+            if (isset($job['payload'])) {
+                return $job['payload'];
+            }
+
+            // 如果提供了 job 和 data
+            if (isset($job['job'])) {
+                $jobClass = $job['job'];
+                $data = $job['data'] ?? '';
+                return $this->createPayload($jobClass, $data);
+            }
+        }
+
+        // 默认作为 job 类处理
+        return $this->createPayload($job, '');
     }
 
     /**
@@ -769,9 +934,9 @@ class RabbitMQ extends Connector
     protected function getExchangeType(?string $type = null): string
     {
         return @constant(AMQPExchangeType::class.'::'.Str::upper($type ?: Arr::get(
-                $this->options,
-                'exchange_type'
-            ) ?: 'direct')) ?: AMQPExchangeType::DIRECT;
+            $this->options,
+            'exchange_type'
+        ) ?: 'direct')) ?: AMQPExchangeType::DIRECT;
     }
 
     /**

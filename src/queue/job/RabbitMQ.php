@@ -12,7 +12,6 @@ use think\queue\Job;
 
 class RabbitMQ extends Job
 {
-
     /**
      * The rabbitmq queue instance.
      *
